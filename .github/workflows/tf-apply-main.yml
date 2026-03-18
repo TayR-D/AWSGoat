@@ -20,8 +20,6 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     env: 
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       AWS_REGION: "us-east-1"
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
@@ -32,6 +30,13 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v5
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
 
     - name: Set up Terraform
       uses: hashicorp/setup-terraform@v3
@@ -47,11 +52,14 @@ jobs:
       id: check 
       run: |
         echo ${{ env.ACCOUNT_ID }}
-        aws s3api head-object --bucket do-not-delete-awsgoat-state-files-${{ env.ACCOUNT_ID }} --key terraform.tfstate
-      continue-on-error: true
+        if aws s3api head-bucket --bucket do-not-delete-awsgoat-state-files-${{ env.ACCOUNT_ID }} >/dev/null 2>&1 && aws s3api head-object --bucket do-not-delete-awsgoat-state-files-${{ env.ACCOUNT_ID }} --key terraform.tfstate >/dev/null 2>&1; then
+          echo "previous_deployment=true" >> $GITHUB_OUTPUT
+        else
+          echo "previous_deployment=false" >> $GITHUB_OUTPUT
+        fi
 
     - name: Exit if previous deployment exists
-      if: steps.check.outcome == 'success' 
+      if: steps.check.outputs.previous_deployment == 'true'
       run: |
         echo "A Previous AWSGoat deployment exists, run the Terraform Destroy Action"
         exit 1
